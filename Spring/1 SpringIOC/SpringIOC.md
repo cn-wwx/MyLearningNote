@@ -25,7 +25,7 @@
 
 代码中都用到了xxxApplicationContext，以下是ApplicationContext的继承图，发现ClassPathXmlApplicationContext和AnnotationConfigApplicationContext都实现自ApplicationContext顶层接口。
 
-![image-20220429105251695](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220429105251695.png)
+![](../images/ApplicationContext inheritance.png)
 
 - ApplicationContext中文意思是“应用上下文”，继承自BeanFactory接口
 - 在ApplicationContext接口的实现类中，比较常用的是ClassPathXmlApplicationContext和AnnotationConfigApplicationContext。
@@ -35,7 +35,7 @@
 
 再来看看ApplicationContext的父类接口
 
-![image-20220429110128117](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220429110128117.png)
+![](../images/Parent interface of ApplicationContext .png)
 
 - EnvironmentCapable：ApplicationContext继承了这个接口，表示拥有了获取环境变量的功能，可以通过ApplicationContext获取操作系统环境变量和JVM环境变量。
 - ListableBeanFactory：ApplicationContext继承了这个接口，就拥有了获取所有beanNames、判断某个beanName是否存在beanDefinition对象、统计BeanDefinition个数、获取某个类型对应的所有beanNames等功能。
@@ -75,9 +75,9 @@ public AnnotationConfigApplicationContext(Class<?>... annotatedClasses) {
 
 ```
 
-发现两个实现类的初始化中，都调用了refresh()方法，refresh()方法放在一下节分析。
+发现两个实现类的初始化中，都调用了refresh()方法，refresh()方法放在后面分析。
 
-
+#### 3.1 ClassPathXmlApplicationContext
 
 先看ClassPathXmlApplicationContext的构造函数中调用的this.setConfigLocations(configLocations);
 
@@ -99,7 +99,7 @@ public void setConfigLocations(String... locations) {
 
 从源码可以看出，这个函数的作用是去解析给定的路径“spring.xml”，然后赋值到this.configLocations中。
 
-
+#### 3.2 AnnotationConfigApplicationContex
 
 再看AnnotationConfigApplicationContext的初始化过程
 
@@ -175,4 +175,6 @@ OK，对refresh()方法的大概流程进行了简单的分析，这应该是Spr
 
 
 ### 5 ioc容器
+
+
 

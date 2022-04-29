@@ -1,6 +1,6 @@
 ### 1 Spring源码模块
 
-![image-20220429102324388](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220429102324388.png)
+![](./images/Spring Framework.png)
 
 如图，Spring主要分为DA/DI、Web、Core、Test几个模块
 
