@@ -25,7 +25,7 @@
 
 代码中都用到了xxxApplicationContext，以下是ApplicationContext的继承图，发现ClassPathXmlApplicationContext和AnnotationConfigApplicationContext都实现自ApplicationContext顶层接口。
 
-![](../images/ApplicationContext inheritance.png)
+![](../images/ApplicationContext-inheritance.png)
 
 - ApplicationContext中文意思是“应用上下文”，继承自BeanFactory接口
 - 在ApplicationContext接口的实现类中，比较常用的是ClassPathXmlApplicationContext和AnnotationConfigApplicationContext。
@@ -35,7 +35,7 @@
 
 再来看看ApplicationContext的父类接口
 
-![](../images/Parent interface of ApplicationContext .png)
+![](../images/interface-of-ApplicationContext.png)
 
 - EnvironmentCapable：ApplicationContext继承了这个接口，表示拥有了获取环境变量的功能，可以通过ApplicationContext获取操作系统环境变量和JVM环境变量。
 - ListableBeanFactory：ApplicationContext继承了这个接口，就拥有了获取所有beanNames、判断某个beanName是否存在beanDefinition对象、统计BeanDefinition个数、获取某个类型对应的所有beanNames等功能。
