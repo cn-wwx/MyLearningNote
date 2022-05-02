@@ -850,7 +850,11 @@ protected void prepareBeanFactory(ConfigurableListableBeanFactory beanFactory) {
 
 #### 4.5 invokeBeanFactoryPostProcessors(beanFactory);
 
-主要作用：调用BeanFacotry的后置处理器，将它们作为Bean注册到容器中；解析了被@ComponentScan、@Import、@Bean等基本注解标注的类
+主要作用：
+
+- 用于处理 BeanFactoryPostProcessor 接口，将它们作为Bean注册到容器中；BeanFactoryPostProcessor 是针对 BeanFactory 的扩展，主要用在 bean 实例化之前，读取 bean 的定义
+- 本方法会实例化和调用所有 BeanFactoryPostProcessor（包括其子类BeanDefinitionRegistryPostProcessor）
+- 解析了被@ComponentScan、@Import、@Bean等基本注解标注的类
 
 整体流程如图所示
 
@@ -1245,6 +1249,265 @@ protected final SourceClass doProcessConfigurationClass(
 
    // No superclass -> processing is complete
    return null;
+}
+```
+
+
+
+#### 4.6 registerBeanPostProcessors(beanFactory);
+
+此方法主要用于处理BeanPostProcessor接口。BeanPostProcessors是针对bean的扩展，主要用在bean实例化之后，执行初始化方法前后，允许程序员自定义BeanPostProcessor实现类来进行业务处理。
+
+查看BeanPostProcessor的源码， Spring 创建 bean 实例时，执行初始化方法前会调用自定义实现BeanPostProcessor 类的 postProcessBeforeInitialization 方法，在执行初始化方法后会调用 MyBeanPostProcessor 的 postProcessAfterInitialization 方法
+
+```java
+public interface BeanPostProcessor {
+   @Nullable
+   default Object postProcessBeforeInitialization(Object bean, String beanName) throws BeansException {
+      return bean;
+   }
+
+   @Nullable
+   default Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
+      return bean;
+   }
+```
+
+ PostProcessorRegistrationDelegate#registerBeanPostProcessors
+
+
+
+```java
+public static void registerBeanPostProcessors(
+      ConfigurableListableBeanFactory beanFactory, AbstractApplicationContext applicationContext) {
+	//获取所有实现了BeanPostProcessor接口的类	
+   String[] postProcessorNames = beanFactory.getBeanNamesForType(BeanPostProcessor.class, true, false);
+
+   // Register BeanPostProcessorChecker that logs an info message when
+   // a bean is created during BeanPostProcessor instantiation, i.e. when
+   // a bean is not eligible for getting processed by all BeanPostProcessors.
+   int beanProcessorTargetCount = beanFactory.getBeanPostProcessorCount() + 1 + postProcessorNames.length;
+    //将BeanPostProcessorChecker（记录一些信息）放入beanFactory中
+   beanFactory.addBeanPostProcessor(new BeanPostProcessorChecker(beanFactory, beanProcessorTargetCount));
+
+   // Separate between BeanPostProcessors that implement PriorityOrdered,
+   // Ordered, and the rest.
+    //创建分别实现了PriorityOrdered、Ordered、普通以及内部后置处理器的链表
+   List<BeanPostProcessor> priorityOrderedPostProcessors = new ArrayList<>();
+   List<BeanPostProcessor> internalPostProcessors = new ArrayList<>();
+   List<String> orderedPostProcessorNames = new ArrayList<>();
+   List<String> nonOrderedPostProcessorNames = new ArrayList<>();
+    //将不同类型的BeanPostProcessor放到对应的链表
+   for (String ppName : postProcessorNames) {
+      if (beanFactory.isTypeMatch(ppName, PriorityOrdered.class)) {
+         BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
+         priorityOrderedPostProcessors.add(pp);
+         if (pp instanceof MergedBeanDefinitionPostProcessor) {
+            internalPostProcessors.add(pp);
+         }
+      }
+      else if (beanFactory.isTypeMatch(ppName, Ordered.class)) {
+         orderedPostProcessorNames.add(ppName);
+      }
+      else {
+         nonOrderedPostProcessorNames.add(ppName);
+      }
+   }
+
+   // First, register the BeanPostProcessors that implement PriorityOrdered.
+   sortPostProcessors(priorityOrderedPostProcessors, beanFactory);
+   registerBeanPostProcessors(beanFactory, priorityOrderedPostProcessors);
+
+   // Next, register the BeanPostProcessors that implement Ordered.
+   List<BeanPostProcessor> orderedPostProcessors = new ArrayList<>(orderedPostProcessorNames.size());
+   for (String ppName : orderedPostProcessorNames) {
+      BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
+      orderedPostProcessors.add(pp);
+      if (pp instanceof MergedBeanDefinitionPostProcessor) {
+         internalPostProcessors.add(pp);
+      }
+   }
+   sortPostProcessors(orderedPostProcessors, beanFactory);
+   registerBeanPostProcessors(beanFactory, orderedPostProcessors);
+
+   // Now, register all regular BeanPostProcessors.
+   List<BeanPostProcessor> nonOrderedPostProcessors = new ArrayList<>(nonOrderedPostProcessorNames.size());
+   for (String ppName : nonOrderedPostProcessorNames) {
+      BeanPostProcessor pp = beanFactory.getBean(ppName, BeanPostProcessor.class);
+      nonOrderedPostProcessors.add(pp);
+      if (pp instanceof MergedBeanDefinitionPostProcessor) {
+         internalPostProcessors.add(pp);
+      }
+   }
+   registerBeanPostProcessors(beanFactory, nonOrderedPostProcessors);
+
+   // Finally, re-register all internal BeanPostProcessors.
+   sortPostProcessors(internalPostProcessors, beanFactory);
+   registerBeanPostProcessors(beanFactory, internalPostProcessors);
+
+   // Re-register post-processor for detecting inner beans as ApplicationListeners,
+   // moving it to the end of the processor chain (for picking up proxies etc).
+   beanFactory.addBeanPostProcessor(new ApplicationListenerDetector(applicationContext));
+}
+```
+
+进入registerBeanPostProcessors方法，
+
+```java
+private static void registerBeanPostProcessors(
+      ConfigurableListableBeanFactory beanFactory, List<BeanPostProcessor> postProcessors) {
+
+   for (BeanPostProcessor postProcessor : postProcessors) {
+      beanFactory.addBeanPostProcessor(postProcessor);
+   }
+}
+```
+
+进入addBeanPostProcessor，该方法就是将 BeanPostProcessor 添加到 beanPostProcessors 缓存，先移除再添加，主要是起一个排序的作用。
+
+```java
+public void addBeanPostProcessor(BeanPostProcessor beanPostProcessor) {
+   Assert.notNull(beanPostProcessor, "BeanPostProcessor must not be null");
+   // Remove from old position, if any
+   this.beanPostProcessors.remove(beanPostProcessor);
+   // Track whether it is instantiation/destruction aware
+   if (beanPostProcessor instanceof InstantiationAwareBeanPostProcessor) {
+      this.hasInstantiationAwareBeanPostProcessors = true;
+   }
+   if (beanPostProcessor instanceof DestructionAwareBeanPostProcessor) {
+      this.hasDestructionAwareBeanPostProcessors = true;
+   }
+   // Add to end of list
+   this.beanPostProcessors.add(beanPostProcessor);
+}
+```
+
+整个 registerBeanPostProcessors 方法围绕 BeanPostProcessor 接口展开，和 invokeBeanFactoryPostProcessors 不同的是，invokeBeanFactoryPostProcessors 方法会直接调用 BeanFactoryPostProcessor 实现类的方法，而 registerBeanPostProcessors 方法只是将 BeanPostProcessor 实现类注册到 BeanFactory 的 beanPostProcessors 缓存中。
+
+
+
+#### 4.7 initMessageSource();
+
+此方法主要是初始化消息源，用于国际化处理
+
+```java
+protected void initMessageSource() {
+   ConfigurableListableBeanFactory beanFactory = getBeanFactory();
+    //判断容器中是否有meessageSource对象，如果有则获取，并设置给MessageSource
+   if (beanFactory.containsLocalBean(MESSAGE_SOURCE_BEAN_NAME)) {
+      this.messageSource = beanFactory.getBean(MESSAGE_SOURCE_BEAN_NAME, MessageSource.class);
+      // Make MessageSource aware of parent MessageSource.
+      if (this.parent != null && this.messageSource instanceof HierarchicalMessageSource) {
+         HierarchicalMessageSource hms = (HierarchicalMessageSource) this.messageSource;
+         if (hms.getParentMessageSource() == null) {
+            // Only set parent context as parent MessageSource if no parent MessageSource
+            // registered already.
+            hms.setParentMessageSource(getInternalParentMessageSource());
+         }
+      }
+      if (logger.isTraceEnabled()) {
+         logger.trace("Using MessageSource [" + this.messageSource + "]");
+      }
+   }
+   else {
+      // Use empty MessageSource to be able to accept getMessage calls.
+      DelegatingMessageSource dms = new DelegatingMessageSource();
+      dms.setParentMessageSource(getInternalParentMessageSource());
+      this.messageSource = dms;
+      beanFactory.registerSingleton(MESSAGE_SOURCE_BEAN_NAME, this.messageSource);
+      if (logger.isTraceEnabled()) {
+         logger.trace("No '" + MESSAGE_SOURCE_BEAN_NAME + "' bean, using [" + this.messageSource + "]");
+      }
+   }
+}
+```
+
+
+
+#### 4.8 initApplicationEventMulticaster();
+
+初始化事件广播器
+
+ApplicationEventMulticaster是一个接口，主要用于管理ApplicationListener(监听器)，将事件发布到监听器上
+
+
+
+```java
+protected void initApplicationEventMulticaster() {
+   ConfigurableListableBeanFactory beanFactory = getBeanFactory();
+    //从容器获取多播器，如果存在，设置给this.applicationEventMulticaster
+   if (beanFactory.containsLocalBean(APPLICATION_EVENT_MULTICASTER_BEAN_NAME)) {
+      this.applicationEventMulticaster =
+            beanFactory.getBean(APPLICATION_EVENT_MULTICASTER_BEAN_NAME, ApplicationEventMulticaster.class);
+      if (logger.isTraceEnabled()) {
+         logger.trace("Using ApplicationEventMulticaster [" + this.applicationEventMulticaster + "]");
+      }
+   }//不存在，new一个SimpleApplicationEventMulticaster，并注册到容器中
+   else {
+      this.applicationEventMulticaster = new SimpleApplicationEventMulticaster(beanFactory);
+      beanFactory.registerSingleton(APPLICATION_EVENT_MULTICASTER_BEAN_NAME, this.applicationEventMulticaster);
+      if (logger.isTraceEnabled()) {
+         logger.trace("No '" + APPLICATION_EVENT_MULTICASTER_BEAN_NAME + "' bean, using " +
+               "[" + this.applicationEventMulticaster.getClass().getSimpleName() + "]");
+      }
+   }
+}
+```
+
+
+
+#### 4.9 onRefresh()
+
+该方法是模板方法，可重写用于刷新特定的上下文
+
+
+
+#### 4.10 registerListeners()
+
+向容器中添加ApplicationListener接口的实现类（监听器）
+
+```java
+protected void registerListeners() {
+   // Register statically specified listeners first.
+   for (ApplicationListener<?> listener : getApplicationListeners()) {
+      getApplicationEventMulticaster().addApplicationListener(listener);
+   }
+
+   // Do not initialize FactoryBeans here: We need to leave all regular beans
+   // uninitialized to let post-processors apply to them!
+   String[] listenerBeanNames = getBeanNamesForType(ApplicationListener.class, true, false);
+    //向多播器中添加监听器
+   for (String listenerBeanName : listenerBeanNames) {
+      getApplicationEventMulticaster().addApplicationListenerBean(listenerBeanName);
+   }
+
+   // Publish early application events now that we finally have a multicaster...
+    
+   Set<ApplicationEvent> earlyEventsToProcess = this.earlyApplicationEvents;
+   this.earlyApplicationEvents = null;
+   if (!CollectionUtils.isEmpty(earlyEventsToProcess)) {
+      for (ApplicationEvent earlyEvent : earlyEventsToProcess) {
+          //调用监听器广播早期事件
+         getApplicationEventMulticaster().multicastEvent(earlyEvent);
+      }
+   }
+}
+```
+
+进入multicastEvent
+
+```java
+public void multicastEvent(final ApplicationEvent event, @Nullable ResolvableType eventType) {
+   ResolvableType type = (eventType != null ? eventType : resolveDefaultEventType(event));
+   Executor executor = getTaskExecutor();
+   for (ApplicationListener<?> listener : getApplicationListeners(event, type)) {
+      if (executor != null) {
+         executor.execute(() -> invokeListener(listener, event));
+      }
+      else {
+         invokeListener(listener, event);
+      }
+   }
 }
 ```
 
