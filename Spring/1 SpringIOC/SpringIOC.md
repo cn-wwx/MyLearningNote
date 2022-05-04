@@ -1981,11 +1981,159 @@ protected Object doCreateBean(String beanName, RootBeanDefinition mbd, @Nullable
 
 
 
-##### 4.11.2 缓存
+##### 4.11.2 三级缓存如何解决循环依赖
+
+```java
+/** Cache of singleton objects: bean name to bean instance. */
+//一级缓存，缓存的是已经经历了完整生命周期的bean对象
+private final Map<String, Object> singletonObjects = new ConcurrentHashMap<>(256);
 
 
-beanDefinitionMap 缓存：beanName -> BeanDefinition。
-singletonObjects 缓存：beanName -> 单例 bean 对象。
-earlySingletonObjects 缓存：beanName -> 单例 bean 对象，该缓存存放的是早期单例 bean 对象，可以理解成还没有进行属性赋值
-singletonFactories 缓存：beanName -> ObjectFactory。
-singletonsCurrentlyInCreation 缓存：当前正在创建单例 bean 对象的 beanName 集合。
+/** Cache of singleton factories: bean name to ObjectFactory. */
+//三级缓存
+private final Map<String, ObjectFactory<?>> singletonFactories = new HashMap<>(16);
+
+
+/** Cache of early singleton objects: bean name to bean instance. */
+//二级缓存，该缓存存放的是早期单例 bean 对象，可以理解成还没有进行属性赋值
+private final Map<String, Object> earlySingletonObjects = new ConcurrentHashMap<>(16);
+```
+
+###### 产生循环依赖的原因
+
+A创建时--->需要B--->B创建时--->需要A，从而产生循环
+
+![](../images/circular-references-1.png)
+
+###### 打破这个循环就是加一层缓存
+
+![](../images/circular-references-2.png)
+
+```java
+//AbstractAutowireCapableBeanFactory.java#doCreateBean
+if (earlySingletonExposure) {
+   if (logger.isTraceEnabled()) {
+      logger.trace("Eagerly caching bean '" + beanName +
+            "' to allow for resolving potential circular references");
+   }
+    //提前暴露，加入缓存
+   addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
+}
+
+// Initialize the bean instance.
+//依赖注入
+Object exposedObject = bean;
+try {
+   populateBean(beanName, mbd, instanceWrapper);
+   exposedObject = initializeBean(beanName, exposedObject, mbd);
+}
+```
+
+1. A 的 Bean 在创建过程中，在进行依赖注入之前，先把 A 的原始 Bean 放入缓存（提早暴露，只要放到缓存了，其他 Bean 需要时就可以从缓存中拿了），放入缓存后，再进行依赖注入。
+2. 此时 A 的Bean 依赖了 B 的 Bean。如果 B 的 Bean 不存在，则需要创建 B 的 Bean，而创建 B 的 Bean 的过程和 A 一样，也是先创建一个 B 的原始对象，然后把 B 的原始对象提早暴露出来放入缓存中，然后在对 B 的原始对象进行依赖注入 A，此时能从缓存中拿到 A 的原始对象（虽然是 A 的原始对象，还不是最终的 Bean），B 的原始对象依赖注入 完了之后，B 的生命周期结束，那么 A 的生命周期也能结束。
+3.  因为整个过程中，都只有一个 A 原始对象，所以对于 B 而言，就算在属性注入时，注入的是 A 原始对 象，也没有关系，因为A 原始对象在后续的生命周期中在堆中没有发生变化。
+
+
+
+###### 为什么需要第三级缓存singletonFactories
+
+问题：如果A的原始对象注入给B之后，A的原始对象进行了AOP产生了一个代理对象，此时就会出现，B依赖的A和最终的A不是同一个对象。
+
+在Bean的生命周期的最后，Spring提供了BeanPostProcessor可以对Bean进行加工（AOP就是通过一个BeanPostProcessor来实现的）。而BeanPostProcessor的加工是处于属性注入之后，循环依赖是发生在属性注入的过程中，所以就导致了上述的问题。
+
+解决：使用singletonFactories缓存
+
+singletonFactories中保存的是某个beanName对应的ObjectFactory，在bean的生命周期中，生成完原始对象之后，就会构造一个ObjectFactory存入singletonFactories中。
+
+![](../images/circular-references-3.png)
+
+```java
+boolean earlySingletonExposure = (mbd.isSingleton() && this.allowCircularReferences &&
+      isSingletonCurrentlyInCreation(beanName));
+if (earlySingletonExposure) {
+   if (logger.isTraceEnabled()) {
+      logger.trace("Eagerly caching bean '" + beanName +
+            "' to allow for resolving potential circular references");
+   }
+    //lamda表达式执行了getEarlyBeanReference方法
+   addSingletonFactory(beanName, () -> getEarlyBeanReference(beanName, mbd, bean));
+}
+
+protected Object getEarlyBeanReference(String beanName, RootBeanDefinition mbd, Object bean) {
+    Object exposedObject = bean;
+    if (!mbd.isSynthetic() && hasInstantiationAwareBeanPostProcessors()) {
+        for (BeanPostProcessor bp : getBeanPostProcessors()) {
+            if (bp instanceof SmartInstantiationAwareBeanPostProcessor) {
+                SmartInstantiationAwareBeanPostProcessor ibp = (SmartInstantiationAwareBeanPostProcessor) bp;
+                //调用SmartInstantiationAwareBeanPostProcessor接口的默认方法getEarlyBeanReference
+                exposedObject = ibp.getEarlyBeanReference(exposedObject, beanName);
+            }
+        }
+    }
+    return exposedObject;
+}
+//AbstractAutoProxyCreator类覆写此方法
+public Object getEarlyBeanReference(Object bean, String beanName) {
+    Object cacheKey = this.getCacheKey(bean.getClass(), beanName);
+    this.earlyProxyReferences.put(cacheKey, bean);
+    //进行AOP
+    return this.wrapIfNecessary(bean, beanName, cacheKey);
+}
+```
+
+1. 通过断点调试，存入 singletonFactories 时并不会执行 lambda 表达式，也就是不会执行getEarlyBeanReference 方法。 从 singletonFactories 根据 beanName 得到一个 ObjectFactory ，然后执行 ObjectFactory ，也就是执行 getEarlyBeanReference 方法，此时会得到一个 A 原始对象经过 AOP 之后的代理对象，然后把该代理对 象放入 earlySingletonObjects 中。 此时并没有把代理对象放入 singletonObjects 中。
+2. 假设现在有其他对象依赖了 A，那么则可以从 earlySingletonObjects 中得到 A 原始对象的代理对象了， 并且是A的同一个代理对象。 当 B 创建完了之后，A 继续进行生命周期，而 A 在完成属性注入后，会按照它本身的逻辑去进行AOP
+3. 怎么判断一个对象是否经历过了 AOP？ 会利用 earlyProxyReferences缓存，在 AbstractAutoProxyCreator 的 postProcessAfterInitialization 方法中，会去判断当前 beanName 是否 在 earlyProxyReferences，如果在则表示已经提前进行过 AOP了。 
+4. 对于 A 而言，进行了 AOP 的判断后，以及 BeanPostProcessor 的执行之后，就需要把 A 对应的对象放入 singletonObjects 中了，但是我们知道，应该是要 A 的代理对象放入 singletonObjects 中，所以此时需要从 earlySingletonObjects 中得到代理对象，然后入 singletonObjects 中。 至此，整个循环依赖解决完毕
+
+
+
+注意：在每个 Bean 的生成过程中，都会提前暴露一个工厂，这个工厂可能用到，也可能用不到，如果没有出现循环依赖依赖本 bean，那么这个工厂无用，本 bean 按照自己的 生命周期执行，执行完后直接把本 bean 放入 singletonObjects 中即可，如果出现了循环依赖依赖了 本 bean，则另外那个 bean 执行 ObjectFactory 提交得到一个 AOP 之后的代理对象（如果有 AOP 的话，如果无 AOP ，则直接得到一个原始对象）
+
+
+
+##### 4.11.3 循环依赖代码流程
+
+![](../images/spring-circular-references.png)
+
+
+
+#### 4.12 finishRefresh
+
+```java
+protected void finishRefresh() {
+   // Clear context-level resource caches (such as ASM metadata from scanning).
+   clearResourceCaches();
+
+   // Initialize lifecycle processor for this context.
+   initLifecycleProcessor();
+
+   // Propagate refresh to lifecycle processor first.
+   getLifecycleProcessor().onRefresh();
+
+   // Publish the final event.
+   publishEvent(new ContextRefreshedEvent(this));
+
+   // Participate in LiveBeansView MBean, if active.
+   LiveBeansView.registerApplicationContext(this);
+}
+```
+
+完成此上下文的刷新，主要是发布ContextRefreshedEvent 到监听器
+
+
+
+##### 
+
+
+
+
+
+#### 总结
+
+SpringIOC 中最重要的4个方法：
+obtainFreshBeanFactory 创建一个新的 BeanFactory、读取和解析 bean 定义。
+invokeBeanFactoryPostProcessors 提供给开发者对 BeanFactory 进行扩展。
+registerBeanPostProcessors 提供给开发者对 bean 进行扩展。
+finishBeanFactoryInitialization 实例化剩余的所有非懒加载单例 bean
+
