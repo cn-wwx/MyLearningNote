@@ -152,7 +152,7 @@ public boolean shouldSkip(@Nullable AnnotatedTypeMetadata metadata, @Nullable Co
 
 SpringBootCondition的整体类图
 
-![image-20220517204310391](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220517204310391.png)
+![image-20220517204310391](./images/SpringBootCondition.png)
 
 可以看到SpringBootCondition继承了Condition接口，然后又有很多具体实现类 OnXXXConditon，这些 OnXXXConditon 就是 @ConditionOnXXX 的条件类
 

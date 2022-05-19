@@ -37,7 +37,7 @@
 mvn clean install -DskipTests -Pfast
 ```
 
-![image-20220517184415265](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220517184415265.png)
+![](./images//result.png)
 
 
 
@@ -45,7 +45,7 @@ mvn clean install -DskipTests -Pfast
 
 spring-boot-samples模块自带了很多demo样例，可以运行相应的sample来进行调试。
 
-![image-20220517184546698](C:/Users/27069/AppData/Roaming/Typora/typora-user-images/image-20220517184546698.png)
+![image-20220517184546698](./images/SpringBoot-structure.png)
 
 发现spring-boot-samples是灰色的，原因是该模块没有添加到根 pom.xml中，增加如下配置
 
