@@ -1,6 +1,6 @@
 ### 1 Spring源码模块
 
-![](./images/ApplicationContext-inheritance.png)
+![](./images/Spring-Framework.png)
 
 如图，Spring主要分为DA/DI、Web、Core、Test几个模块
 
