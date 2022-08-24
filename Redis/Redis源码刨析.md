@@ -164,6 +164,60 @@ Redis 还实现了一些用于支持系统运维的辅助功能
 
 
 
+
+
+## 小结
+
+整理了一下代码分类：
+
+
+
+数据类型
+
+- String：t_string.c、sds.c、bitops.c
+- List：t_list.c、ziplist.c
+- Hash：t_hash.c、ziplist.c、dict.c
+- Set：t_set.c、intset.c
+- Sorted Set：t_zset.c、ziplist.c、dict.c
+- HyperLoglog：hyperloglog.c
+- Geo：geo.c、geohash.c、geohash_helper.c
+- Stream：t_stream.c、rax.c、listpack.c
+
+
+
+全局（被各个类所引用的对象）
+
+- Server：server.c、anet.c
+- Object：object.c
+- 键值对：db.c
+- 事件驱动：ae.c、ae_epoll.c、ae_kqueue.c、ae_evport.c、ae_select.c、networking.c
+- 内存回收：expire.c、lazyfree.c
+- 数据替换：evict.c
+- 后台线程：bio.c
+- 事务：multi.c
+- 内存分配：zmalloc.c
+- 双向链表：adlist.c
+
+
+
+高可用和集群
+
+- 持久化：RDB：rdb.c、redis-check-rdb.c、AOF：aof.c、redis-check-aof.c 
+- 主从复制：replication.c
+- 哨兵：sentinel.c
+- 集群：cluster.c
+
+
+
+辅助功能：
+
+- 延迟统计：latency.c
+-  慢日志：slowlog.c
+- 通知：notify.c
+- 基准性能：redis-benchmark.c
+
+
+
 # 三 数据结构模块
 
 
@@ -295,6 +349,7 @@ typedef struct dictht {
 //dictEntry
 typedef struct dictEntry {
     void *key;
+    //一种节省内存的开发小技巧，当值为整数或双精度浮点数时，由于本身就是64位，就可以不用指针指向，而是可以直接存在键值对结构体中，避免再使用一个指针
     union {
         void *val;
         uint64_t u64;
@@ -486,6 +541,241 @@ Redis 用于优化内存使用效率的两种方法：内存优化的数据结�
 
 
 
+### redisObject结构体
+
+redisObject 结构体是在 server.h 文件中定义的，主要功能是用来保存键值对中的值。
+
+```c
+// server.h
+typedef struct redisObject {
+    //变量后使用冒号和数值的定义方法是语言中的位域定义法，可以用来有效地节省内存开销
+    unsigned type:4; //redisObject的数据类型，4个bits
+    unsigned encoding:4; //redisObject的编码类型，4个bits
+    unsigned lru:LRU_BITS;  //redisObject的LRU时间，LRU_BITS为24个bits
+    int refcount; //redisObject的引用计数，4个字节
+    void *ptr; //指向值的指针，8个字节
+} robj;
+```
+
+
+
+### SDS内存友好设计
+
+#### 嵌入式字符串
+
+SDS 在保存比较小的字符串时，会使用嵌入式字符串的设计方法，将字符串直接保存在 redisObject 结构体中。
+
+![img](Redis源码刨析.assets/f6be6811ea3618a8aae047b29b0bfa23.jpg)
+
+再object.c有创建字符串的方法 createStringObject
+
+```c
+#define OBJ_ENCODING_EMBSTR_SIZE_LIMIT 44
+robj *createStringObject(const char *ptr, size_t len) {
+    if (len <= OBJ_ENCODING_EMBSTR_SIZE_LIMIT)
+        return createEmbeddedStringObject(ptr,len);
+    else
+        return createRawStringObject(ptr,len);
+}
+
+//创建 String 类型的值的时候，会调用 createObject 函数
+//createObject 函数主要是用来创建 Redis 的数据对象的。其参数为：要创建的数据对象类型，指向数据对象的指针
+robj *createRawStringObject(const char *ptr, size_t len) {
+    return createObject(OBJ_STRING, sdsnewlen(ptr,len));
+}
+
+robj *createObject(int type, void *ptr) {
+    robj *o = zmalloc(sizeof(*o));
+    o->type = type;
+    o->encoding = OBJ_ENCODING_RAW;
+    o->ptr = ptr;
+    o->refcount = 1;
+
+    /* Set the LRU to the current lruclock (minutes resolution), or
+     * alternatively the LFU counter. */
+    if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
+        o->lru = (LFUGetTimeInMinutes()<<8) | LFU_INIT_VAL;
+    } else {
+        o->lru = LRU_CLOCK();
+    }
+    return o;
+}
+```
+
+普通字符串创建流程图。
+
+![img](Redis源码刨析.assets/92ba6c70129843d7e48a7c074a5737ba.jpg)
+
+在创建普通字符串时，Redis 需要分别给 redisObject 和 SDS （sdsnewlen）分别分配一次内存，这样就既带来了内存分配开销，同时也会导致内存碎片。因此，当字符串小于等于 44 字节时，Redis 就使用了嵌入式字符串的创建方法，该函数会使用一块连续的内存空间，来同时保存 redisObject 和 SDS 结构，以此减少内存分配和内存碎片。
+
+```c
+robj *createEmbeddedStringObject(const char *ptr, size_t len) {
+    //分配一块连续的内存空间，这块内存空间的大小等于 redisObject 结构体的大小、SDS 结构头 sdshdr8 的大小和字符串大小的总和，并且再加上 1 字节（结束字符“\0”）。
+    robj *o = zmalloc(sizeof(robj)+sizeof(struct sdshdr8)+len+1);
+    //创建 SDS 结构的指针 sh，并把 sh 指向这块连续空间中 SDS 结构头所在的位置
+    struct sdshdr8 *sh = (void*)(o+1);
+
+    o->type = OBJ_STRING;
+    o->encoding = OBJ_ENCODING_EMBSTR;
+    o->ptr = sh+1;
+    o->refcount = 1;
+    if (server.maxmemory_policy & MAXMEMORY_FLAG_LFU) {
+        o->lru = (LFUGetTimeInMinutes()<<8) | LFU_INIT_VAL;
+    } else {
+        o->lru = LRU_CLOCK();
+    }
+
+    sh->len = len;
+    sh->alloc = len;
+    sh->flags = SDS_TYPE_8;
+    if (ptr == SDS_NOINIT)
+        sh->buf[len] = '\0';
+    else if (ptr) {
+        memcpy(sh->buf,ptr,len);
+        sh->buf[len] = '\0';
+    } else {
+        memset(sh->buf,0,len+1);
+    }
+    return o;
+}
+```
+
+
+
+### 压缩列表和整数集合的设计
+
+List、Hash 和 Sorted Set 这三种数据类型，都可以使用压缩列表（ziplist）来保存数据。压缩列表的函数定义和实现代码分别在 ziplist.h 和 ziplist.c 中。
+
+压缩列表就是一块连续的内存空间，它通过使用不同的编码来保存数据。
+
+```c
+/* Each entry in the ziplist is either a string or an integer. */
+typedef struct {
+    /* When string is used, it is provided with the length (slen). */
+    unsigned char *sval;
+    unsigned int slen;
+    /* When integer is used, 'sval' is NULL, and lval holds the value. */
+    long long lval;
+} ziplistEntry;
+```
+
+压缩列表的创建
+
+```c
+//ziplist的列表头大小，包括2个32 bits整数和1个16bits整数，分别表示压缩列表的总字节数，列表最后一个元素的离列表头的偏移，以及列表中的元素个数
+#define ZIPLIST_HEADER_SIZE     (sizeof(uint32_t)*2+sizeof(uint16_t))
+//ziplist的列表尾大小，包括1个8 bits整数，表示列表结束。
+#define ZIPLIST_END_SIZE        (sizeof(uint8_t))
+//ziplist的列表尾字节内容
+#define ZIP_END 255 
+
+
+
+/* Create a new empty ziplist. */
+unsigned char *ziplistNew(void) {
+    unsigned int bytes = ZIPLIST_HEADER_SIZE+ZIPLIST_END_SIZE;
+    //创建一块连续的内存空间,大小为 ZIPLIST_HEADER_SIZE 和 ZIPLIST_END_SIZE
+    unsigned char *zl = zmalloc(bytes);
+    ZIPLIST_BYTES(zl) = intrev32ifbe(bytes);
+    ZIPLIST_TAIL_OFFSET(zl) = intrev32ifbe(ZIPLIST_HEADER_SIZE);
+    //初始数据长度为0
+    ZIPLIST_LENGTH(zl) = 0;
+    //把该连续空间的最后一个字节赋值为 ZIP_END
+    zl[bytes-1] = ZIP_END;
+    return zl;
+}
+```
+
+初始列表如图
+
+![img](Redis源码刨析.assets/a09c893fe8bbafca9ec61b38165f3810.jpg)
+
+往 ziplist 中插入数据时，**ziplist 就会根据数据是字符串还是整数，以及它们的大小进行不同的编码**。这种根据数据大小进行相应编码的设计思想，正是 Redis 为了节省内存而采用的。
+
+```c
+/* We use this function to receive information about a ziplist entry.
+ * Note that this is not how the data is actually encoded, is just what we
+ * get filled by a function in order to operate more easily. */
+typedef struct zlentry {
+    unsigned int prevrawlensize; /* Bytes used to encode the previous entry len*/
+    unsigned int prevrawlen;     /* Previous entry len. */
+    unsigned int lensize;        /* Bytes used to encode this entry type/len.
+                                    For example strings have a 1, 2 or 5 bytes
+                                    header. Integers always use a single byte.*/
+    unsigned int len;            /* Bytes used to represent the actual entry.
+                                    For strings this is just the string length
+                                    while for integers it is 1, 2, 3, 4, 8 or
+                                    0 (for 4 bit immediate) depending on the
+                                    number range. */
+    unsigned int headersize;     /* prevrawlensize + lensize. */
+    unsigned char encoding;      /* Set to ZIP_STR_* or ZIP_INT_* depending on
+                                    the entry encoding. However for 4 bits
+                                    immediate integers this can assume a range
+                                    of values and must be range-checked. */
+    unsigned char *p;            /* Pointer to the very start of the entry, that
+                                    is, this points to prev-entry-len field. */
+} zlentry;
+```
+
+ziplist 列表项包括三部分内容，分别是前一项的长度（prevlen）、当前项长度信息的编码结果（encoding），以及当前项的实际数据（data）。
+
+![img](Redis源码刨析.assets/864539a743ab9911fde71366463fc8d5.jpg)
+
+
+
+ziplist 中会包含多个列表项，每个列表项都是紧挨着彼此存放的，而为了方便查找，每个列表项中都会记录前一项的长度。因为每个列表项的长度不一样，所以如果使用相同的字节大小来记录 prevlen，就会造成内存空间浪费。
+
+假设统一使用 4 字节记录 prevlen，如果前一个列表项只是一个字符串“redis”，长度为 5 个字节，那么我们用 1 个字节（8 bits）就能表示 256 字节长度（2 的 8 次方等于 256）的字符串了。此时，prevlen 用 4 字节记录，其中就有 3 字节是浪费掉了。
+
+![img](Redis源码刨析.assets/eb734ed4a3718b28404ba90fdbe1a5fc.jpg)
+
+ziplist 在对 prevlen 编码时，会先调用 zipStorePrevEntryLength 函数，编码这块以后有兴趣可以研究。
+
+简而言之，针对不同长度的数据，使用不同大小的元数据信息（prevlen 和 encoding），这种方法可以有效地节省内存开销。当然，除了 ziplist 之外，Redis 还设计了一个内存友好的数据结构，这就是整数集合（intset），它是作为底层结构来实现 Set 数据类型的。
+
+和 SDS 嵌入式字符串、ziplist 类似，整数集合也是一块连续的内存空间
+
+```c
+typedef struct intset {
+    uint32_t encoding;
+    uint32_t length;
+    int8_t contents[];
+} intset;
+```
+
+
+
+### 节省内存的数据访问
+
+为了避免在内存中反复创建经常被访问的数据，Redis 就采用了共享对象的设计思想。就是把这些常用数据创建为共享对象，当上层应用需要访问它们时，直接读取就行。
+
+主要方法是server.c中的 createSharedObjects 
+
+```c
+
+void createSharedObjects(void) {
+   …
+   //常见回复信息
+   shared.ok = createObject(OBJ_STRING,sdsnew("+OK\r\n"));
+   shared.err = createObject(OBJ_STRING,sdsnew("-ERR\r\n"));
+   …
+   //常见报错信息
+ shared.nokeyerr = createObject(OBJ_STRING,sdsnew("-ERR no such key\r\n"));
+ shared.syntaxerr = createObject(OBJ_STRING,sdsnew("-ERR syntax error\r\n"));
+   //0到9999的整数
+   for (j = 0; j < OBJ_SHARED_INTEGERS; j++) {
+        shared.integers[j] =
+          makeObjectShared(createObject(OBJ_STRING,(void*)(long)j));
+        …
+    }
+   …
+}
+```
+
+
+
+
+
 ### 小结
 
 1、要想理解 Redis 数据类型的设计，必须要先了解 redisObject。
@@ -495,6 +785,7 @@ Redis 的 key 是 String 类型，但 value 可以是很多类型（String/List/
 ```c
 // server.h
 typedef struct redisObject {
+    //变量后使用冒号和数值的定义方法是语言中的位域定义法，可以用来有效地节省内存开销
     unsigned type:4; //redisObject的数据类型，4个bits
     unsigned encoding:4; //redisObject的编码类型，4个bits
     unsigned lru:LRU_BITS;  //redisObject的LRU时间，LRU_BITS为24个bits
@@ -816,6 +1107,20 @@ else if (zobj->encoding == OBJ_ENCODING_SKIPLIST) {
 增删节点需要处理其它节点的「分裂、合并」，跳表只需调整前后指针即可 - B+ 树、跳表范围查询友好，直接遍历链表即可，Radix Tree 需遍历树结构
 
 实现难度高比 B+ 树、跳表复杂 每种数据结构都是在面对不同问题场景下，才被设计出来的，结合各自场景中的数据特点，使用优势最大的数据结构才是正解。
+
+
+
+3、B+树和跳表的关联
+
+B+树和跳跃表这两种数据结构在本身设计上是有亲缘关系的，其实如果把B+树拉直来看不难发现其结构和跳跃表很相似，甚至B+树的父亲结点其实类似跳跃表的level层级。
+
+在当前计算机硬件存储设计上，B+树能比跳表存储更大量级的数据，因为跳表需要通过增加层高来提高索引效率，而B+树只需要增加树的深度。此外B+树同一叶子的连续性更加符合当代计算机的存储结构。然而跳表的层高具有随机性，当层高较大的时候磁盘插入会带来一定的开销，且不利于分块。
+
+
+
+4、Redis为什么不适用B+树而选择跳表
+
+因为数据有序性的实现B+树不如跳表，跳表的时间性能是优于B+树的（B+树不是二叉树，二分的效率是比较高的）。此外跳表最低层就是一条链表，对于需要实现范围查询的功能是比较有利的，而且Redis是基于内存设计的，无需考虑海量数据的场景。
 
 
 
@@ -1725,11 +2030,18 @@ aeCreateEventLoop 函数执行的操作，大致可以分成以下三个步骤:
 
 
 
+aeCreateEventLoop中的关键点：
+
+- 事件驱动框架监听的IO事件数组大小为参数setsize（1000多），决定了server连接的客户端数量；当客户端连接报错"max number of clients reached"，就可以去配置文件中修改maxclients
+- 框架循环流程初始化操作，会通过aeApiCreate创建epoll_event数组，并调用epoll_create创建epoll实例
+
+
+
 ### IO事件处理
 
 Redis的三类IO事件：分别是可读事件、可写事件和屏障事件
 
-屏障事件的主要作用是用来反转事件的处理顺序。比如在默认情况下，Redis 会先给客户端返回结果，但是如果面临需要把数据尽快写入磁盘的情况，Redis 就会用到屏障事件，把写数据和回复客户端的顺序做下调整，先把数据落盘，再给客户端回复
+屏障事件的主要作用是用来**反转事件的处理顺序**。比如在默认情况下，Redis 会先给客户端返回结果，但是如果面临需要把数据尽快写入磁盘的情况，Redis 就会用到屏障事件，把写数据和回复客户端的顺序做下调整，先把数据落盘，再给客户端回复
 
 IO 事件的数据结构是 aeFileEvent 结构体，IO 事件的创建是通过 aeCreateFileEvent 函数来完成的
 
