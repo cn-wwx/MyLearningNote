@@ -369,3 +369,77 @@ in中id数量较多，导致查询的数据量比较大，这是一个比较常�
 List<List<Integer>> partitionGoodsIdList = Lists.partition(goodsIdList, LIMIT_SIZE);
 ```
 
+当SQL的查询参数过多，我觉得可以考虑使用上述拆分的方式
+
+
+
+## 案例二
+
+返回的查询结果过多
+
+```mysql
+select from goods where goods_status = ? and poi_id = ?
+```
+
+**解决办法**：将SQL修改为分页查询，并在业务代码上修改为分页查询，修改后的SQL语句如下：
+
+```mysql
+select from goods where goods_status = 1 and poi_id = 11 and goods_id > 22 order by goods_id limit 2000
+```
+
+通过分页的方式可以降低数据量，避免慢查询，但是会从而导致一次查询请求，增加为多次查询请求，对于limit的大小需要谨慎评估
+
+
+
+## 案例三
+
+order by慢查询
+
+```mysql
+SELECT * FROM order FORCE INDEX (orderid)  WHERE orderId = 11 AND status IN (0,22) ORDER BY id ASC ;
+```
+
+该SQL由于强制**指定了使用orderId索引，但条件中并没有orderId**，导致产生全表扫描（type: ALL）；
+
+如下为问题SQL的执行计划：
+
+![图片](MySQL 死锁、事务、编码、慢查询.assets/640)
+
+直接原因是最终传给SQL查询函数的参数，orderId没有加入where子句，但forceindex一直生效
+
+
+
+## 案例四
+
+join慢查询
+
+```mysql
+select * from useract join userinfo order by useracct.id desc limit 11;
+```
+
+对sql进行explain可以发现，因为忘写了join的on条件，这是扫全表sql，如下图：
+
+![图片](MySQL 死锁、事务、编码、慢查询.assets/640)
+
+我们首先看type级别两个表的级别都是ALL，说明该条语句没有用到索引，做了全表扫描是最差的情况
+
+![图片](MySQL 死锁、事务、编码、慢查询.assets/640)
+
+
+
+## 案例五
+
+**不同索引尝试**
+
+```mysql
+select id from goods_info where id > ? and activity_id = ? and goods_switch in(?+) limit ?
+select id from goods_info where id > 123991510 and activity_id = 0 and goods_switch in (2,3) limit 1000
+```
+
+通过执行计划可知，该语句走的是`activity_id`和主键的索引，但是这种命中率比较低，大量的数据被`goods_switch`筛掉
+
+**解决办法**：在不确定最优的索引的情况下，可以在测试环境下，分别添加不同的索引，观察执行计划及语句的执行时间。
+
+尝试强制走主键索引，效果不佳；尝试添加`activity_id_id`的联合索引，效果不佳；尝试添加`activity_id,goods_switch`的联合索引，问题解决！
+
+所以在不确定哪种索引是最优时，可以尝试建立不同的索引，观察语句在不同索引情况下的执行情况进行权衡。
