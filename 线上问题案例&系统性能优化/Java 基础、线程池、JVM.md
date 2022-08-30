@@ -19,17 +19,17 @@
 
 1、`top`命令定位CPU最高的进程
 
-![image-20220822192324547](Java 基础、线程池、JVM.assets/image-20220822192324547.png)
+![image-20220822192324547](./Java 基础、线程池、JVM.assets/image-20220822192324547.png)
 
 2、`top -Hp pid` 定位使用CPU最高的线程
 
-![image-20220822192400148](Java 基础、线程池、JVM.assets/image-20220822192400148.png)
+![image-20220822192400148](./Java 基础、线程池、JVM.assets/image-20220822192400148.png)
 
 3、`printf '0x%x' tid` 线程id转化16进制
 
 4、jstack pid | grep tid 找到线程堆栈
 
-![image-20220822192514160](Java 基础、线程池、JVM.assets/image-20220822192514160.png)
+![image-20220822192514160](./Java 基础、线程池、JVM.assets/image-20220822192514160.png)
 
 
 
@@ -37,7 +37,7 @@
 
 阿里开源的[arthas](https://github.com/alibaba/arthas)现在已经几乎包揽了我们线上排查问题的工作，提供了一个很完整的工具集。在这个场景中，也只需要一个`thread -n`命令即可。
 
-![image-20220822192615181](Java 基础、线程池、JVM.assets/image-20220822192615181.png)
+![image-20220822192615181](./Java 基础、线程池、JVM.assets/image-20220822192615181.png)
 
 
 
@@ -45,7 +45,7 @@
 
 情况一：发现使用CPU最高的都是GC线程
 
-![image-20220822192835021](Java 基础、线程池、JVM.assets/image-20220822192835021.png)
+![image-20220822192835021](./Java 基础、线程池、JVM.assets/image-20220822192835021.png)
 
 情况二：发现使用CPU最高的是业务线程
 
@@ -61,7 +61,7 @@
 
 回顾gc流程
 
-![image-20220822193129913](Java 基础、线程池、JVM.assets/image-20220822193129913.png)
+![image-20220822193129913](./Java 基础、线程池、JVM.assets/image-20220822193129913.png)
 
 查看gc 的具体情况：
 
@@ -70,9 +70,9 @@
 
 获取到gc日志之后，可以上传到[GC easy](http://gceasy.io/)帮助分析，得到可视化的图表分析结果
 
-![image-20220822193436605](Java 基础、线程池、JVM.assets/image-20220822193436605.png)
+![image-20220822193436605](./Java 基础、线程池、JVM.assets/image-20220822193436605.png)
 
-![image-20220822193501044](Java 基础、线程池、JVM.assets/image-20220822193501044.png)
+![image-20220822193501044](./Java 基础、线程池、JVM.assets/image-20220822193501044.png)
 
 
 
@@ -107,7 +107,7 @@ gc原因及定位
 
 ## 四 常见问题恢复
 
-![image-20220822194746194](Java 基础、线程池、JVM.assets/image-20220822194746194.png)
+![image-20220822194746194](./Java 基础、线程池、JVM.assets/image-20220822194746194.png)
 
 
 
@@ -138,7 +138,7 @@ public static void push2Kafka(Object msg) {
 }
 ```
 
-代码功能是，每次线上调用把计算结果发给Kafka，Kafka消费方再继续后续的逻辑。内存被耗尽可能的原因是，因为使用了newFixedThreadPool线程池，其工作机制是固定N个线程，而提交给线程池的任务队列大小是不受限制的，如果Kafka发消息被阻塞或者编码，那么队列里的任务会越来越多，导致内存被耗尽。
+代码功能是，每次线上调用把计算结果发给Kafka，Kafka消费后再继续后续的逻辑。内存被耗尽可能的原因是，因为使用了newFixedThreadPool线程池，其工作机制是固定N个线程，而提交给线程池的任务队列大小是不受限制的，如果Kafka发消息被阻塞或者变慢，那么队列里的任务会越来越多，导致内存被耗尽。
 
 ```java
 //Executors.java
