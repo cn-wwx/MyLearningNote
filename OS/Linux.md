@@ -35,6 +35,33 @@
 
 ## 2 Linux命令行
 
+### 用户与密码
+
+通过cat命令，查看/etc/passwd文件，组的信息放在/etc/group中
+
+```shell
+root@VM-8-11-ubuntu:/home/ubuntu# cat /etc/passwd
+root:x:0:0:root:/root:/bin/bash
+...
+lighthouse:x:1000:1000::/home/lighthouse:/bin/bash
+
+root@VM-8-11-ubuntu:/home/ubuntu# cat /etc/group
+root:x:0:
+...
+lighthouse:x:1000:lighthouse
+
+```
+
+x是密码，之后的数字是用户ID和组ID，和/etc/group对应。
+
+/root和/home/lighthouse是用户的主目录，就是用户登录进去后的默认路径。
+
+/bin/bash 的位置是用于配置登录后的默认交互命令行，Linux 登录后的交互命令行是一个解析脚本的程序，这里配置的是 /bin/bash。
+
+
+
+
+
 ### 浏览文件
 
 ```bash
@@ -46,19 +73,21 @@ drwxr-xr-x 6 root root    4096 Oct 20  2017 apt
 
 其中第一个字段的第一个字符是文件类型。如果是“-”，表示普通文件；如果是 d，就表示目录。当然还有很多种文件类型。
 
-第一个字段剩下的 9 个字符是模式，其实就是权限位（access permission bits）。3 个一组，每一组 rwx 表示“读（read）”、“写（write）”、“执行（execute）”。如果是字母，就说明有这个权限；如果是横线，就是没有这个权限。这三组分别表示文件所属的用户权限、文件所属的组权限以及其他用户的权限。例如，上面的例子中，-rw-r–r-- 就可以翻译为，这是一个普通文件，对于所属用户，可读可写不能执行；对于所属的组，仅仅可读；对于其他用户，也是仅仅可读。
+第一个字段剩下的 9 个字符是模式，其实就是权限位（access permission bits）。3 个一组，每一组 rwx 表示“读（read）”、“写（write）”、“执行（execute）”。如果是字母，就说明有这个权限；如果是横线，就是没有这个权限。这三组分别表示文件所属的用户权限、文件所属的组权限以及其他用户的权限。例如，上面的例子中，-rw-r–r-- 就可以翻译为，这是一个普通文件，对于所属用户，可读可写不能执行；对于所属的组，仅仅可读；对于其他用户，也是仅仅可读。如果想改变权限，可以使用命令 **chmod 711 文件名**。
 
 第二个字段是硬链接（hard link）数目。
 
 第三个字段是所属用户，第四个字段是所属组。第五个字段是文件的大小，第六个字段是文件被修改的日期，最后是文件名。
 
+可以通过命令**chown**改变所属用户，**chgrp**改变所属组
+
 
 
 ### 安装软件
 
-下载 rpm 或者 deb。为什么有两种呢？因为 Linux 现在常用的有两大体系，一个是 CentOS 体系，一个是 Ubuntu 体系，前者使用 rpm，后者使用 deb。
+下载 rpm 或者 deb。因为 Linux 现在常用的有两大体系，一个是 CentOS 体系，一个是 Ubuntu 体系，前者使用 rpm，后者使用 deb。
 
-CentOS 下面使用rpm -i jdk-XXX_linux-x64_bin.rpm进行安装，Ubuntu 下面使用dpkg -i jdk-XXX_linux-x64_bin.deb。其中 -i 就是 install 的意思
+CentOS 下面使用**rpm -i jdk-XXX_linux-x64_bin.rpm**进行安装，Ubuntu 下面使用**dpkg -i jdk-XXX_linux-x64_bin.deb**。其中 -i 就是 install 的意思
 
 在 Linux 下面，凭借rpm -qa和dpkg -l就可以查看安装的软件列表
 
@@ -68,9 +97,9 @@ rpm -qa | grep jdk，这个命令是将列出来的所有软件形成一个输�
 
 如果要删除，可以用rpm -e和dpkg -r。-e 就是 erase，-r 就是 remove。
 
-Linux 也有自己的软件管家，CentOS 下面是 yum，Ubuntu 下面是 apt-get。
+Linux 也有自己的软件管家，CentOS 下面是 **yum**，Ubuntu 下面是 **apt-get**。
 
-关键词搜索，例如搜索jdk、yum search jdk和apt-cache search jdk，可以搜索出很多很多可以安装的 jdk 版本。如果数目太多，可以通过管道 grep、more、less 来进行过滤。选中一个之后，就可以进行安装了。可以用yum install java-11-openjdk.x86_64和apt-get install openjdk-9-jdk来进行安装。
+关键词搜索，例如搜索jdk、yum search jdk和**apt-cache search jdk**，可以搜索出很多很多可以安装的 jdk 版本。如果数目太多，可以通过管道 grep、more、less 来进行过滤。选中一个之后，就可以进行安装了。可以用yum install java-11-openjdk.x86_64和apt-get install openjdk-9-jdk来进行安装。
 
 安装以后，如何卸载呢？我们可以使用yum erase java-11-openjdk.x86_64和apt-get purge openjdk-9-jdk。
 
@@ -101,7 +130,12 @@ vim hello，就是打开一个文件，名字叫 hello。如果没有这个文�
 
 我们其实就相当于打开了一个 notepad。如果文件有内容，就会显示出来。移动光标的位置，通过上下左右键就行。如果想要编辑，就把光标移动到相应的位置，输入i，意思是 insert。进入编辑模式，可以插入、删除字符，这些都和 notepad 很像。要想保存编辑的文本，我们使用esc键退出编辑模式，然后输入“:”，然后在“:”后面输入命令w，意思是 write，这样就可以保存文本，冒号后面输入q，意思是 quit，这样就会退出 vim。如果编辑了，还没保存，不想要了，可以输入q!。
 
-
+|                  | Centos                                              | Ubuntu                                                       |
+| ---------------- | --------------------------------------------------- | ------------------------------------------------------------ |
+| 下载             | rpm -i 文件名.rpm                                   | dpkg -i 文件名.deb                                           |
+| 查看软件安装列表 | rpm -qa                                             | dpkg -l                                                      |
+| 删除             | rpm -e                                              | dpkg -r                                                      |
+| 软件管家         | yum<br />yum search<br />yum install<br />yum erase | apt-get<br />apt-cache search 文件名<br />apt-get install 文件名<br />apt-get purge |
 
 
 
@@ -109,15 +143,15 @@ vim hello，就是打开一个文件，名字叫 hello。如果没有这个文�
 
 #### shell启动
 
-Linux 不是根据后缀名来执行的。它的执行条件是这样的：只要文件有 x 执行权限，都能到文件所在的目录下，通过./filename运行这个程序。当然，如果放在 PATH 里设置的路径下面，就不用./ 了，直接输入文件名就可以运行了，Linux 会帮你找。
+Linux 不是根据后缀名来执行的。它的执行条件是这样的：只要文件有 x 执行权限，都能到文件所在的目录下，通过**./filename**运行这个程序。当然，如果放在 PATH 里设置的路径下面，就不用./ 了，直接输入文件名就可以运行了，Linux 会帮你找。
 
 这是 Linux 执行程序最常用的一种方式，通过 shell 在交互命令行里面运行。
 
 #### 后台运行
 
-Linux 运行程序的第二种方式，后台运行。这个时候，我们往往使用nohup命令。这个命令的意思是 no hang up（不挂起），也就是说，当前交互命令行退出的时候，程序还要在。当然这个时候，程序不能霸占交互命令行，而是应该在后台运行。最后加一个 &，就表示后台运行。
+Linux 运行程序的第二种方式，后台运行。这个时候，我们往往使用**nohup**命令。这个命令的意思是 no hang up（不挂起），也就是说，当前交互命令行退出的时候，程序还要在。当然这个时候，程序不能霸占交互命令行，而是应该在后台运行。最后加一个 &，就表示后台运行。
 
-另外一个要处理的就是输出，原来什么都打印在交互命令行里，现在在后台运行了，输出到哪里呢？输出到文件是最好的。最终命令的一般形式为nohup command >out.file 2>&1 &。这里面，“1”表示文件描述符 1，表示标准输出，“2”表示文件描述符 2，意思是标准错误输出，“2>&1”表示标准输出和错误输出合并了。合并到哪里去呢？到 out.file 里。
+另外一个要处理的就是输出，原来什么都打印在交互命令行里，现在在后台运行了，输出到哪里呢？输出到文件是最好的。最终命令的一般形式为**nohup command >out.file 2>&1 &**。这里面，“1”表示文件描述符 1，表示标准输出，“2”表示文件描述符 2，意思是标准错误输出，“2>&1”表示标准输出和错误输出合并了。合并到哪里去呢？到 out.file 里。
 
 进程如何关闭呢？我们假设启动的程序包含某个关键字，那就可以使用下面的命令。
 
@@ -131,7 +165,7 @@ awk 工具可以很灵活地对文本进行处理，这里的 awk '{print $2}'�
 
 程序运行的第三种方式，以服务的方式运行。例如常用的数据库 MySQL，就可以使用这种方式运行。
 
-在 Ubuntu 中，我们可以通过 apt-get install mysql-server 的方式安装 MySQL，然后通过命令systemctl start mysql启动 MySQL，通过systemctl enable mysql设置开机启动。之所以成为服务并且能够开机启动，是因为在 /lib/systemd/system 目录下会创建一个 XXX.service 的配置文件，里面定义了如何启动、如何关闭。
+在 Ubuntu 中，我们可以通过 apt-get install mysql-server 的方式安装 MySQL，然后通过命令**systemctl start mysql**启动 MySQL，通过systemctl enable mysql设置开机启动。之所以成为服务并且能够开机启动，是因为在 /lib/systemd/system 目录下会创建一个 XXX.service 的配置文件，里面定义了如何启动、如何关闭。
 
 
 
@@ -139,7 +173,7 @@ awk 工具可以很灵活地对文本进行处理，这里的 awk '{print $2}'�
 
 ![image-20220621082622813](Linux.assets/image-20220621082622813.png)
 
-自己知道想干什么，但不知道哪个命令可以干怎么办？我们可以通过man -k key1|grep key2| grep  key...进行搜索，man -k 或apropos是我认为学习linux命令优先掌握的命令，这样你就可以自己搜索了，相当于google,baidu
+自己知道想干什么，但不知道哪个命令可以干,可以通过man -k key1|grep key2| grep  key...进行搜索，man -k 或apropos是linux命令优先掌握的命令，这样你就可以自己搜索了，相当于google,baidu
 
 
 
@@ -357,7 +391,7 @@ IP 寄存器就是指令指针寄存器（Instruction Pointer Register)，指向
 
 CS、SS、DS、ES 仍然是 16 位的，但是不再是段的起始地址。段的起始地址放在内存的某个表格，表格中的一项一项是段描述符（Segment Descriptor）。这里面才是真正的段的起始地址。而段寄存器里面保存的是在这个表格中的哪一项，称为选择子（Selector）。这样，将一个从段寄存器直接拿到的段起始地址，就变成了先间接地从段寄存器找到表格中的一项，再从表格中的一项中拿到段起始地址。
 
-到了 32 位的系统架构下，我们将前一种模式称为实模式（Real Pattern），后一种模式称为保护模式（Protected Pattern）。当系统刚刚启动的时候，CPU 是处于实模式的，这个时候和原来的模式是兼容的。当需要更多内存的时候，可以遵循一定的规则，进行一系列的操作，然后切换到保护模式，就能够用到 32 位 CPU 更强大的能力。
+到了 32 位的系统架构下，我们将前一种模式称为**实模式（Real Pattern）**，后一种模式称为**保护模式（Protected Pattern）**。当系统刚刚启动的时候，CPU 是处于实模式的，这个时候和原来的模式是兼容的。当需要更多内存的时候，可以遵循一定的规则，进行一系列的操作，然后切换到保护模式，就能够用到 32 位 CPU 更强大的能力。
 
 
 
@@ -381,7 +415,7 @@ x86 有两种模式，一种模式是实模式，只能寻址 1M，每个段最�
 
 ![image-20220622161335665](Linux.assets/image-20220622161335665.png)
 
-当电脑刚加电的时候，会做一些重置的工作，将 CS 设置为 0xFFFF，将 IP 设置为 0x0000，所以第一条指令就会指向 0xFFFF0，正是在 ROM 的范围内。在这里，有一个 JMP 命令会跳到 ROM 中做初始化工作的代码，于是，BIOS 开始进行初始化的工作。
+当电脑刚加电的时候，会做一些重置的工作，将 CS 设置为 0xFFFF，将 IP 设置为 0x0000，所以第一条指令就会指向 0xFFFF0，正是在 ROM 的范围内(此时属于实模式，CS段初始地址为0xFFFF，左移4位加上IP则是0xFFFF0）。在这里，有一个 JMP 命令会跳到 ROM 中做初始化工作的代码，于是，BIOS 开始进行初始化的工作。
 
 BIOS程序：
 
@@ -778,6 +812,12 @@ PID 1 的进程就是我们的 init 进程 systemd，PID 2 的进程是内核线
 pts 的父进程是 sshd，bash 的父进程是 pts，ps -ef 这个命令的父进程是 bash。这样整个链条都比较清晰了。
 
 ### 总结
+
+进程从代码到二进制运行时的过程。
+
+首先通过图右边的文件编译过程，生成so文件和可执行文件，存储到硬盘上。
+
+图左边的用户态进程A调用fork创建进程B，进程B调用系统调用exec进入内核调用load_elf_binary，将生成的可执行文件加载到进程B的内存中执行
 
 ![img](Linux.assets/dbd8785da6c3ce3fe1abb7bb5934b7a9.jpeg)
 

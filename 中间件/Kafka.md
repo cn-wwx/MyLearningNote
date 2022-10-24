@@ -15,6 +15,14 @@
 - 消息队列：建立实时流数据管道，在系统或应用程序之间可靠地获取数据
 - 数据处理：构建实时的流数据处理程序来转换或处理数据流
 
+ 
+
+Kafka 相比其他消息队列主要的优势如下：
+
+极致的性能：基于 Scala 和 Java 语言开发，设计中大量使用了批量处理和异步的思想，最高可以每秒处理千万级别的消息
+
+生态系统兼容性无可匹敌：Kafka 与周边生态系统的兼容性是最好的没有之一，尤其在大数据和流计算领域
+
 
 
 # 二 Kafka消息模型
@@ -47,7 +55,7 @@ Kafka 的消息模型同时支持**队列模型**和**发布-订阅模型**
 - Consumer：消费消息
 - Consumer Group：多个消费者实例共同组成的一个 **Consumer Group（消费者组）** ，Kafka 以 Consumer Group 这一个整体来订阅 Topic （主题），Consumer Group 内的所有 Consumer 共同来消费订阅的 Topic 内的所有  Partition（分区）。使用多分区 + 多消费者方式可以极大提高数据下游的处理速度。
   - Topic 下的每个 Partition 只从属于 Consumer Group 中的一个 Consumer，**不可能出现 Consumer Group 中的两个 Consumer 负责同一个 Partition**
-  - 重平衡机制：当Topic内的Partition与Consumer Group内的Consumer数据不一致时，通过重平衡机制来协调。它本质上是一种协议，规定了一个 Consumer Group 下的所有 Consumer 如何达成一致来分配订阅 Topic 的每个分区
+  - **重平衡机制**：当Topic内的Partition与Consumer Group内的Consumer数据不一致时，通过重平衡机制来协调。它本质上是一种协议，规定了一个 Consumer Group 下的所有 Consumer 如何达成一致来分配订阅 Topic 的每个分区
   - Kafka 就是通过消费组的方式来实现消息 P2P 模式和广播模式
 - Broker：服务代理节点代理，是 Kafka 的服务节点，可以看作一个独立的Kafka实例，负责处理客户端请求以及对消息持久化
 - Topic：Kafka 中的消息以 Topic 为单位进行划分，Producer 将消息发送到特定的主题，Consumer 通过订阅特定的 Topic 来消费消息
@@ -82,7 +90,15 @@ Zookeeper 主要为 Kafka 做了下面这些事情：
 
 # 五 如何保证消息的消费顺序
 
+1、一个Topic只对应一个Partition
 
+2、发送消息的时候指定key/Parition
+
+![image-20220906153015831](Kafka.assets/image-20220906153015831.png)
+
+Kafka能保证Partition中的消息有序，而不能保证Topic中的有序。消息在被追加到Partition时会分配一个特定的偏移量，通过偏移量来保证消息在分区内的顺序性。所以就有一种简单的保证消息消费顺序的方法：一个Topic只对应一个Partition；
+
+Kafka发送消息的时候，可以指定topic，partition，key，data4个参数。在发送消息时指定parition，则所有消息都会发送到指定的partition。并且同一个key的消息可以保证只发送到同一个partition中。因此，可以采用表/对象的id来作为key。
 
 
 
@@ -146,25 +162,25 @@ if (sendResult.getRecordMetadata() != null) {
 
 `Kafka` 为 `Partition` 引入了多副本（`Replica`）机制。`Partition` 中的多个副本之间会有一个 `Leader` ，其他副本称为 `Follower`。我们发送的消息会被发送到 `Leader` 副本，然后 `Follower` 副本才能从 `Leader` 副本中拉取消息进行同步。**生产者和消费者只与 `Leader` 副本交互**。你可以理解为其他副本只是 `Leader` 副本的拷贝，它们的存在只是为了保证消息存储的安全性。
 
-试想一种情况：假如  `Leader` 副本所在的 `Broker` 突然挂掉，那么就要从 `Fllower` 副本重新选出一个  `Leader` ，但是  `Leader` 的数据还有一些没有被 `Follower` 副本的同步的话，就会造成消息丢失
+试想一种情况：假如  `Leader` 副本所在的 `Broker` 突然挂掉，那么就要从 `Follwer` 副本重新选出一个  `Leader` ，但是  `Leader` 的数据还有一些没有被 `Follower` 副本的同步的话，就会造成消息丢失
 
 
 
 #### 设置 acks = all
 
-解决办法就是我们设置 `**acks = all**`。acks 是 `Producer` 很重要的一个参数。
+解决办法就是我们设置 `acks = all`。acks 是 `Producer` 很重要的一个参数。
 
-`acks` 的默认值即为 1，代表我们的消息被 `Leader` 副本接收之后就算被成功发送。当我们配置 `**acks = all**` 代表则所有副本都要接收到该消息之后该消息才算真正成功被发送。
+`acks` 的默认值即为 1，代表我们的消息被 `Leader` 副本接收之后就算被成功发送。当我们配置 `acks = all` 代表则所有副本都要接收到该消息之后该消息才算真正成功被发送。
 
 #### 设置 replication.factor >= 3
 
-为了保证 `Leader` 副本能有 `Follower` 副本能同步消息，我们一般会为 `Topic` 设置 `**replication.factor >= 3**`。这样就可以保证每个 `Partition` 至少有 3 个副本。虽然造成了数据冗余，但是带来了数据的安全性。
+为了保证 `Leader` 副本能与 `Follower` 副本能同步消息，我们一般会为 `Topic` 设置 `replication.factor >= 3`。这样就可以保证每个 `Partition` 至少有 3 个副本。虽然造成了数据冗余，但是带来了数据的安全性。
 
 #### 设置 min.insync.replicas > 1
 
-一般情况下我们还需要设置 `**min.insync.replicas> 1**` ，这样配置代表消息至少要被写入到 2 个副本才算是被成功发送。`**min.insync.replicas**` 的默认值为 1 ，在实际生产中应尽量避免默认值 1。
+一般情况下我们还需要设置 `min.insync.replicas> 1` ，这样配置代表消息至少要被写入到 2 个副本才算是被成功发送。`min.insync.replicas` 的默认值为 1 ，在实际生产中应尽量避免默认值 1。
 
-但是，为了保证整个 Kafka 服务的高可用性，需要确保 `**replication.factor > min.insync.replicas**` 。为什么呢？设想一下假如两者相等的话，只要是有一个副本挂掉，整个分区就无法正常工作了。这明显违反高可用性！一般推荐设置成 `**replication.factor = min.insync.replicas + 1**`。
+但是，为了保证整个 Kafka 服务的高可用性，需要确保 `replication.factor > min.insync.replicas` 。为什么呢？设想一下假如两者相等的话，只要是有一个副本挂掉，整个分区就无法正常工作了。这明显违反高可用性！一般推荐设置成 `replication.factor = min.insync.replicas + 1`。
 
 
 
@@ -190,7 +206,7 @@ Kafka 允许同一个 Partition 存在多个消息副本，每个 Partition 的�
 
 ### ISR集合副本
 
-ISR 中的副本都是与 Leader 同步的副本，相反，不在 ISR 中的追随者副本就被认为是与 Leader 不同步的
+ISR 中的副本都是与 Leader 同步的副本，相反，不在 ISR 中的Follower副本就被认为是与 Leader 不同步的
 
 这里的保持同步不是指与 Leader 数据保持完全一致，只需在`replica.lag.time.max.ms`时间内与 Leader 保持有效连接
 
@@ -230,7 +246,7 @@ ISR 中所有副本都跟上了 Leader，通常只有 ISR 里的成员才可能�
 
 生产者无需等待服务端的任何确认，消息被添加到生产者套接字缓冲区后就视为已发送，因此 acks=0 不能保证服务端已收到消息
 
-- acks=1」
+- acks=1
 
 只要 `Partition Leader` 接收到消息而且写入本地磁盘了，就认为成功了，不管它其他的 Follower 有没有同步过去这条消息了
 
@@ -266,7 +282,7 @@ Kafka 使用 ZooKeeper 存储 Broker、Topic 等状态数据，Kafka 集群中�
 
 ### **Broker**
 
-当 Broker 发生故障后，由 Controller 负责选举受影响 Partition 的新 Leader 并通知到相关 Broker」
+当 Broker 发生故障后，由 Controller 负责选举受影响 Partition 的新 Leader 并通知到相关 Broker
 
 - 当 Broker 出现故障与 ZooKeeper 断开连接后，该 Broker 在 ZooKeeper 对应的 znode 会自动被删除，ZooKeeper 会触发 Controller 注册在该节点的 Watcher；
 - Controller 从 ZooKeeper 的`/brokers/ids`节点上获取宕机 Broker 上的所有 Partition；
