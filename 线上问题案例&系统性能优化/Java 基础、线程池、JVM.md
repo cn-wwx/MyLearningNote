@@ -138,7 +138,7 @@ public static void push2Kafka(Object msg) {
 }
 ```
 
-代码功能是，每次线上调用把计算结果发给Kafka，Kafka消费方再继续后续的逻辑。内存被耗尽可能的原因是，因为使用了newFixedThreadPool线程池，其工作机制是固定N个线程，而提交给线程池的任务队列大小是不受限制的，如果Kafka发消息被阻塞或者编码，那么队列里的任务会越来越多，导致内存被耗尽。
+代码功能是，每次线上调用把计算结果发给Kafka，Kafka消费方再继续后续的逻辑。内存被耗尽可能的原因是，因为使用了newFixedThreadPool线程池，其工作机制是固定N个线程，而提交给线程池的任务队列大小是不受限制的，如果Kafka发消息被阻塞或者变慢，那么队列里的任务会越来越多，导致内存被耗尽。
 
 ```java
 //Executors.java
