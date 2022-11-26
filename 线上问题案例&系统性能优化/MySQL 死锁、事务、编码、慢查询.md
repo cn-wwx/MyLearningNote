@@ -443,3 +443,119 @@ select id from goods_info where id > 123991510 and activity_id = 0 and goods_swi
 尝试强制走主键索引，效果不佳；尝试添加`activity_id_id`的联合索引，效果不佳；尝试添加`activity_id,goods_switch`的联合索引，问题解决！
 
 所以在不确定哪种索引是最优时，可以尝试建立不同的索引，观察语句在不同索引情况下的执行情况进行权衡。
+
+
+
+# 隐式转换
+
+场景：
+
+第一张user表：
+
+```mysql
+CREATE TABLE `user` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `name` varchar(50) COLLATE utf8_bin DEFAULT NULL,
+  `age` int(3) DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+
+
+INSERT INTO `user` VALUES (1, '张三', 28, '2022-09-06 07:40:56', '2022-09-06 07:40:59');
+```
+
+第二张order表
+
+```mysql
+CREATE TABLE `order` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `user_id` int(11) DEFAULT NULL,
+  `order_code` varchar(64) COLLATE utf8_bin DEFAULT NULL,
+  `money` decimal(20,0) DEFAULT NULL,
+  `title` varchar(255) COLLATE utf8_bin DEFAULT NULL,
+  `create_time` datetime DEFAULT NULL,
+  `update_time` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB AUTO_INCREMENT=2 DEFAULT CHARSET=utf8 COLLATE=utf8_bin;
+
+
+INSERT INTO `order` VALUES (1, 2, '1d90530e-6ada-47c1-b2fa-adba4545aabd', 100, 'xxx购买两件商品', '2022-09-06 07:42:25', '2022-09-06 07:42:27');
+
+```
+
+本来的 SQL 语句应该是这样子的，查询 `order`表中用户id`user_id`在`user`表的记录
+
+```mysql
+select o.* from `user` u 
+left JOIN `order` o on u.id = o.user_id;
+```
+
+但是呢，因为手抖，将 on 后面的条件写成了 `u.id = o.order_code`，完全关联错误，这两个字段完全没有联系，而且`u.id`是 int 类型，`o.order_code`是`varchar`类型。
+
+```mysql
+select o.* from `user` u 
+left JOIN `order` o on u.id = o.order_code;
+```
+
+这样的话， 当我们执行这条语句的时候，会不会查出数据来呢？
+
+我的第一感觉是，不仅不会查出数据，而且还会报错，因为连接的这两个字段类型都不一样，值更不一样。
+
+结果却被啪啪打脸，不仅没有报错，而且还查出了数据。
+
+![image-20221126225309136](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225309136.png)
+
+可以把这个问题简化一下，简化成下面这条语句，同样也会出现问题。
+
+![image-20221126225330835](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225330835.png)
+
+明明这条记录的 order_code 字段的值是 `1d90530e-6ada-47c1-b2fa-adba4545aabd`，怎么用 `order_code=1`的条件就把它给查出来了。
+
+
+
+根源所在：
+
+这里是 MySQL 进行了隐式转换，由于查询条件后面跟的查询值是整型的，所以 MySQL 将 `order_code`字段进行了字符串到整数类型的转换，而转换后的结果正好是 `1`。
+
+通过 `cast`函数转换验证一下结果。
+
+```mysql
+select cast('1d90530e-6ada-47c1-b2fa-adba4545aabd' as unsigned);
+```
+
+![image-20221126225435778](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225435778.png)
+
+再用两条 SQL 看一下字符串到整数类型转换的规则。
+
+```mysql
+select cast('223kkk' as unsigned);
+select cast('k223kkk' as unsigned);
+```
+
+![image-20221126225501947](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225501947.png)
+
+`223kkk`转换后的结果是 `223`，而`k223kkk`转换后的结果是0。总结一下，转换的规则是：
+
+1、从字符串的左侧开始向右转换，遇到非数字就停止；
+
+2、如果第一个就是非数字，最后的结果就是0；
+
+
+
+隐式转换的规则：
+
+当操作符与不同类型的操作数一起使用的时候，就会发生隐式转换。
+
+例如算数运算符的前后是不同类型时，会将非数字类型转换为数字，比如 '5a'+2，就会将`5a`转换为数字类型，然后和2相加，最后的结果就是 7 。
+
+![image-20221126225617899](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225617899.png)
+
+再比如 `concat`函数是连接两个字符串的，当此函数的参数出现非字符串类型时，就会将其转换为字符串，例如concat(88,'就是发')，最后的结果就是 `88就是发`。
+
+![image-20221126225629358](MySQL 死锁、事务、编码、慢查询.assets/image-20221126225629358.png)
+
+我们在平时的开发过程中，尽量要避免隐式转换，因为一旦发生隐式转换除了会降低性能外， 还有很大可能会出现不期望的结果，就像我最开始遇到的那个问题一样。
+
+之所以性能会降低，还有一个原因就是让本来有的索引失效。
