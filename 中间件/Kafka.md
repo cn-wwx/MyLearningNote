@@ -146,7 +146,7 @@ if (sendResult.getRecordMetadata() != null) {
 
 ## 消费者丢失消息的情况
 
-`offset`  `自动提交`  `重复消费` 
+`offset`  `自动提交`  `手动应答``重复消费` 
 
 消息在被追加到 `Partition`(分区)的时候都会分配一个特定的偏移量（`offset`）。`offset` 表示 `Consumer` 当前消费到的 `Partition`(分区)的所在的位置。Kafka 通过偏移量（`offset`）可以保证消息在分区内的顺序性
 

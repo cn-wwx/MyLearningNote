@@ -2,7 +2,7 @@
 
 ## BIO、NIO、AIO的区别
 
-![image-20220423143928280](../../../AppData/Roaming/Typora/typora-user-images/image-20220423143928280.png)
+![image-20220423143928280](Netty.assets/image-20220423143928280.png)
 
 
 
@@ -41,7 +41,7 @@ NIO的编程模型复杂，而且存在一些BUG。NIO在面对断连重连、�
 
 ## Netty的核心组件
 
-![image-20220423144941377](../../../AppData/Roaming/Typora/typora-user-images/image-20220423144941377.png)
+![image-20220423144941377](Netty.assets/image-20220423144941377.png)
 
 ### Bytebuf 字节容器
 
@@ -145,7 +145,7 @@ EventLoopGroup包含多个EventLoop（每一个EventLoop内部通常包含一个
 
 EventLoop处理的I/O事件将在它专有的Thread上被处理，即Thread和EventLoop属于1：1关系，从而保证线程安全
 
-![image-20220423150532666](../../../AppData/Roaming/Typora/typora-user-images/image-20220423150532666.png)
+![image-20220423150532666](Netty.assets/image-20220423150532666.png)
 
 
 
@@ -165,9 +165,9 @@ EventLoop处理的I/O事件将在它专有的Thread上被处理，即Thread和Ev
 
 ChannelHandler 消息的具体处理器，主要负责处理客户端/服务端接收和发送的数据
 
-![image-20220423151210570](../../../AppData/Roaming/Typora/typora-user-images/image-20220423151210570.png)
+![image-20220423151210570](Netty.assets/image-20220423151210570.png)
 
-![image-20220423151352137](../../../AppData/Roaming/Typora/typora-user-images/image-20220423151352137.png)
+![image-20220423151352137](Netty.assets/image-20220423151352137.png)
 
 
 
@@ -326,23 +326,27 @@ Reactor是一种经典的线程模型，Reactor模式基于事件驱动，适合
 
 ### 单线程 Reactor
 
-![image-20220423160032993](../../../AppData/Roaming/Typora/typora-user-images/image-20220423160032993.png)
-
 优点：对系统资源消耗特别小，但是没办法支撑大量请求的应用场景并且处理请求的时间可能非常慢
+
+![image-20220423160032993](Netty.assets/image-20220423160032993.png)
+
+
 
 
 
 ### 多线程Reactor
 
-![image-20220423160513405](../../../AppData/Roaming/Typora/typora-user-images/image-20220423160513405.png)
-
 在并发数比较多（百万并发）的场景下，一个线程负责接收客户端请求就存在性能问题
+
+![image-20220423160513405](Netty.assets/image-20220423160513405.png)
+
+
 
 
 
 ### 主从多线程Reactor
 
-![image-20220423160632728](../../../AppData/Roaming/Typora/typora-user-images/image-20220423160632728.png)
+![image-20220423160632728](Netty.assets/image-20220423160632728.png)
 
 
 
@@ -363,7 +367,7 @@ Reactor是一种经典的线程模型，Reactor模式基于事件驱动，适合
 
 ### 单线程模型
 
-![image-20220423161031310](../../../AppData/Roaming/Typora/typora-user-images/image-20220423161031310.png)
+![image-20220423161031310](Netty.assets/image-20220423161031310.png)
 
 
 
@@ -383,7 +387,7 @@ try {
     //......
 ```
 
-![image-20220423161238381](../../../AppData/Roaming/Typora/typora-user-images/image-20220423161238381.png)
+![image-20220423161238381](Netty.assets/image-20220423161238381.png)
 
 ### 主从线程模型
 
@@ -401,7 +405,7 @@ try {
     //......
 ```
 
-![image-20220423161618252](../../../AppData/Roaming/Typora/typora-user-images/image-20220423161618252.png)
+![image-20220423161618252](Netty.assets/image-20220423161618252.png)
 
 
 
@@ -441,7 +445,7 @@ try {
         }
 ```
 
-![image-20220423161826545](../../../AppData/Roaming/Typora/typora-user-images/image-20220423161826545.png)
+![image-20220423161826545](Netty.assets/image-20220423161826545.png)
 
 ### 客户端
 
@@ -472,9 +476,9 @@ try {
         }
 ```
 
-![image-20220423162256866](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162256866.png)
+![image-20220423162256866](Netty.assets/image-20220423162256866.png)
 
-![image-20220423162305655](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162305655.png)
+![image-20220423162305655](Netty.assets/image-20220423162305655.png)
 
 
 
@@ -486,10 +490,9 @@ TCP粘包/拆包就是基于TCP发送数据时，出现了多个字符串“粘�
 
 解决方法：
 
-1. 使用Netty自带的解码器
-   ![image-20220423162546090](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162546090.png)
+1. ![image-20220423162546090](Netty.assets/image-20220423162546090.png)
 2. 自定义序列化解码器
-   ![image-20220423162642510](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162642510.png)
+   ![image-20220423162642510](Netty.assets/image-20220423162642510.png)
 
 
 
@@ -499,11 +502,11 @@ TCP粘包/拆包就是基于TCP发送数据时，出现了多个字符串“粘�
 
 ### TCP长连接与短链接
 
-![image-20220423162804153](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162804153.png)
+![image-20220423162804153](Netty.assets/image-20220423162804153.png)
 
-![image-20220423162829930](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162829930.png)
+![image-20220423162829930](Netty.assets/image-20220423162829930.png)
 
 ## Netty零拷贝
 
-![image-20220423162953224](../../../AppData/Roaming/Typora/typora-user-images/image-20220423162953224.png)
+![image-20220423162953224](Netty.assets/image-20220423162953224.png)
 
